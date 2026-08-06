@@ -1,0 +1,400 @@
+"use client";
+
+import React, { useState, useRef } from "react";
+import { Navbar } from "@/components/layout/navbar";
+import { PageContainer } from "@/components/layout/page-container";
+import { GreetingCard } from "@/modules/dashboard/components/greeting-card";
+import { RecommendationCard } from "@/modules/dashboard/components/recommendation-card";
+import { WeatherHero } from "@/modules/dashboard/components/weather-hero";
+import { WeatherMetricCard } from "@/modules/dashboard/components/weather-metric-card";
+import { ForecastCard } from "@/modules/dashboard/components/forecast-card";
+import { HighlightCard } from "@/modules/dashboard/components/highlight-card";
+import { AssistantPreview } from "@/modules/dashboard/components/assistant-preview";
+import { QuickActionCard } from "@/modules/dashboard/components/quick-action-card";
+import { FavoriteCityCard } from "@/modules/dashboard/components/favorite-city-card";
+import { SectionHeader } from "@/modules/dashboard/components/section-header";
+import { Search } from "lucide-react";
+
+import { useWeather } from "@/modules/weather/hooks/useWeather";
+import { useWeatherStore } from "@/modules/weather/store/weather.store";
+import { DashboardSkeleton } from "@/modules/weather/components/dashboard-skeleton";
+import { ErrorCard } from "@/modules/weather/components/error-card";
+
+export default function DashboardPage() {
+  const {
+    currentWeather,
+    isLoading,
+    error,
+    clearError,
+    fetchWeather,
+  } = useWeather();
+
+  const {
+    searchSuggestions,
+    fetchSuggestions,
+    currentCity,
+    errorType,
+  } = useWeatherStore();
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [suggestionsVisible, setSuggestionsVisible] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    setSuggestionsVisible(true);
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    if (val.trim().length < 2) {
+      useWeatherStore.setState({ searchSuggestions: [] });
+      return;
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    debounceTimerRef.current = setTimeout(() => {
+      fetchSuggestions(val, controller.signal);
+    }, 300);
+  };
+
+  const handleSuggestionSelect = (cityName: string) => {
+    fetchWeather(cityName);
+    setSearchQuery("");
+    setSuggestionsVisible(false);
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    fetchWeather(searchQuery);
+    setSearchQuery("");
+    setSuggestionsVisible(false);
+  };
+
+  const handleActionClick = (actionName: string) => {
+    switch (actionName) {
+      case "Ask AI":
+        alert("Navigating to AI Assistant module (Sprint 6 placeholder).");
+        break;
+      case "Plan Event":
+        alert("Navigating to Smart Event Planner module (Sprint 7 placeholder).");
+        break;
+      case "Search City":
+        alert("Focus on the search bar above to look up other global cities.");
+        break;
+      case "Favorite Cities":
+        alert("Navigating to Favorites management (Sprint 8 placeholder).");
+        break;
+      case "View Forecast":
+      default:
+        alert("Opening expanded detailed weather trends (Sprint 5 placeholder).");
+        break;
+    }
+  };
+
+  // 1. Error boundary render
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background text-foreground transition-colors duration-200">
+        <Navbar
+          variant="dashboard"
+          searchQuery={searchQuery}
+          onSearchChange={(e) => handleSearchChange(e.target.value)}
+          onSearchSubmit={handleSearchSubmit}
+          suggestions={searchSuggestions}
+          onSuggestionSelect={handleSuggestionSelect}
+          suggestionsVisible={suggestionsVisible}
+          onFocus={() => setSuggestionsVisible(true)}
+          onBlur={() => setTimeout(() => setSuggestionsVisible(false), 200)}
+          showProfile={true}
+        />
+        <div className="flex-1 flex items-center justify-center">
+          <ErrorCard
+            message={error}
+            type={errorType || undefined}
+            onRetry={() => {
+              clearError();
+              fetchWeather(currentCity || "Ahmedabad");
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Loading skeleton boundary render
+  if (isLoading && !currentWeather) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background text-foreground transition-colors duration-200">
+        <Navbar variant="dashboard" showProfile={true} />
+        <DashboardSkeleton />
+      </div>
+    );
+  }
+
+  const data = currentWeather;
+  if (!data) return null;
+
+  return (
+    <div className="min-h-screen flex flex-col bg-background text-foreground transition-colors duration-200">
+      {/* Dashboard Navbar */}
+      <Navbar
+        variant="dashboard"
+        searchQuery={searchQuery}
+        onSearchChange={(e) => handleSearchChange(e.target.value)}
+        onSearchSubmit={handleSearchSubmit}
+        suggestions={searchSuggestions}
+        onSuggestionSelect={handleSuggestionSelect}
+        suggestionsVisible={suggestionsVisible}
+        onFocus={() => setSuggestionsVisible(true)}
+        onBlur={() => setTimeout(() => setSuggestionsVisible(false), 200)}
+        showProfile={true}
+      />
+
+      <PageContainer size="lg" className="flex-1 py-6 space-y-10">
+        {/* Header section with Greeting & Inline Search for Mobile/Tablet */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <GreetingCard
+            userName={data.greeting.userName}
+            weatherSummary={data.greeting.weatherSummary}
+            dateString={data.greeting.dateString}
+          />
+
+          {/* Inline search bar (visible on mobile/tablet, hidden on desktop Navbar) */}
+          <div className="flex md:hidden flex-col relative w-full max-w-sm">
+            <form
+              onSubmit={handleSearchSubmit}
+              className="flex items-center relative w-full"
+            >
+              <Search className="absolute left-3.5 h-4.5 w-4.5 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search city..."
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                onFocus={() => setSuggestionsVisible(true)}
+                onBlur={() => setTimeout(() => setSuggestionsVisible(false), 200)}
+                className="w-full h-11 pl-10 pr-4 rounded-xl border border-border bg-card text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40 transition-all"
+              />
+            </form>
+
+            {suggestionsVisible && searchSuggestions.length > 0 && (
+              <div className="absolute top-12 left-0 w-full rounded-xl border border-border bg-card/95 backdrop-blur-md shadow-lg overflow-hidden z-50">
+                <ul className="divide-y divide-border/40 max-h-60 overflow-y-auto">
+                  {searchSuggestions.map((item) => (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onMouseDown={() => handleSuggestionSelect(item.name)}
+                        className="w-full text-left px-4 py-3 text-xs hover:bg-primary/10 transition-colors text-foreground block cursor-pointer"
+                      >
+                        <span className="font-semibold">{item.name}</span>
+                        {(item.region || item.country) && (
+                          <span className="text-[10px] text-muted-foreground block truncate">
+                            {item.region ? `${item.region}, ` : ""}{item.country}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Layout Grid 1: Today's Recommendations & Core Hero Conditions */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          <div className="lg:col-span-7 xl:col-span-8 flex flex-col justify-between">
+            <RecommendationCard
+              score={data.recommendation.score}
+              text={data.recommendation.text}
+              bullets={data.recommendation.bullets}
+              metrics={data.recommendation.metrics}
+            />
+          </div>
+          <div className="lg:col-span-5 xl:col-span-4 flex flex-col justify-between">
+            <WeatherHero
+              city={data.hero.city}
+              temp={data.hero.temp}
+              condition={data.hero.condition}
+              feelsLike={data.hero.feelsLike}
+              high={data.hero.high}
+              low={data.hero.low}
+              icon={data.hero.icon}
+            />
+          </div>
+        </div>
+
+        {/* Quick weather card stats */}
+        <div className="space-y-4">
+          <SectionHeader
+            title="Weather Intelligence Metrics"
+            description="High-fidelity indexes regarding today's ambient environment."
+          />
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {data.metrics.map((metric, index) => (
+              <WeatherMetricCard
+                key={index}
+                iconName={metric.icon}
+                name={metric.name}
+                value={metric.value}
+                description={metric.description}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Layout Grid 2: Forecast and AI features */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Left Column: Hourly and Daily Forecasts */}
+          <div className="lg:col-span-7 xl:col-span-8 space-y-8">
+            {/* Hourly Forecast */}
+            <div className="space-y-4">
+              <SectionHeader
+                title="Hourly Forecast"
+                description="Expected atmospheric changes for the next 24 hours."
+              />
+              <div className="flex gap-3 overflow-x-auto pb-3 pt-1 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+                {data.hourlyForecast.map((hour, index) => (
+                  <ForecastCard
+                    key={index}
+                    type="hourly"
+                    timeOrDay={hour.time}
+                    iconName={hour.icon}
+                    temp={hour.temp}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Upcoming Forecast */}
+            <div className="space-y-4">
+              <SectionHeader
+                title="Upcoming Forecast"
+                description="Long-range climate forecast updates."
+              />
+              <div className="flex flex-col gap-2">
+                {data.dailyForecast.map((day, index) => (
+                  <ForecastCard
+                    key={index}
+                    type="daily"
+                    timeOrDay={day.day}
+                    iconName={day.icon}
+                    high={day.high}
+                    low={day.low}
+                    condition={day.condition}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: AI Preview & Saved Locations */}
+          <div className="lg:col-span-5 xl:col-span-4 space-y-8">
+            <div className="space-y-4">
+              <AssistantPreview
+                placeholder={data.aiAssistant.placeholder}
+                defaultAnswer={data.aiAssistant.defaultAnswer}
+              />
+            </div>
+
+            {/* Favorite Cities */}
+            <div className="space-y-4">
+              <SectionHeader
+                title="Saved Locations"
+                description="Monitored city temperatures."
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
+                {data.favorites.map((city, index) => (
+                  <FavoriteCityCard
+                    key={index}
+                    name={city.name}
+                    temp={city.temp}
+                    condition={city.condition}
+                    icon={city.icon}
+                    onClick={() => handleSuggestionSelect(city.name)}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Highlights Section */}
+        <div className="space-y-4">
+          <SectionHeader
+            title="Weather Highlights"
+            description="Deep dive parameters regarding local solar and pressure conditions."
+          />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {data.highlights.map((highlight, index) => (
+              <HighlightCard
+                key={index}
+                name={highlight.name}
+                value={highlight.value}
+                description={highlight.description}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Quick Actions Grid */}
+        <div className="space-y-4">
+          <SectionHeader
+            title="Quick Shortcuts"
+            description="Speed actions for navigation, event planners, and assistant prompts."
+          />
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <QuickActionCard
+              actionName="Ask AI"
+              description="Query weather advice"
+              onClick={() => handleActionClick("Ask AI")}
+            />
+            <QuickActionCard
+              actionName="Plan Event"
+              description="Coordinate event comfort"
+              onClick={() => handleActionClick("Plan Event")}
+            />
+            <QuickActionCard
+              actionName="Search City"
+              description="Inspect global regions"
+              onClick={() => handleActionClick("Search City")}
+            />
+            <QuickActionCard
+              actionName="Favorite Cities"
+              description="Manage saved regions"
+              onClick={() => handleActionClick("Favorite Cities")}
+            />
+            <QuickActionCard
+              actionName="View Forecast"
+              description="expanded trend outlook"
+              onClick={() => handleActionClick("View Forecast")}
+            />
+          </div>
+        </div>
+      </PageContainer>
+
+      {/* Footer */}
+      <footer className="border-t border-border bg-card/30 py-6 mt-12 select-none">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">
+          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            WeatherWise
+          </span>
+          <span className="text-[10px] sm:text-xs text-slate-500 font-semibold">
+            Version 1.0.0 (Sprint 5 Production API)
+          </span>
+        </div>
+      </footer>
+    </div>
+  );
+}
