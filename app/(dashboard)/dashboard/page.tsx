@@ -9,11 +9,12 @@ import { WeatherHero } from "@/modules/dashboard/components/weather-hero";
 import { WeatherMetricCard } from "@/modules/dashboard/components/weather-metric-card";
 import { ForecastCard } from "@/modules/dashboard/components/forecast-card";
 import { HighlightCard } from "@/modules/dashboard/components/highlight-card";
-import { AssistantPreview } from "@/modules/dashboard/components/assistant-preview";
 import { QuickActionCard } from "@/modules/dashboard/components/quick-action-card";
 import { FavoriteCityCard } from "@/modules/dashboard/components/favorite-city-card";
+import { FloatingAssistant } from "@/modules/assistant/components/floating-assistant";
 import { SectionHeader } from "@/modules/dashboard/components/section-header";
-import { Search } from "lucide-react";
+import { Search, MapPin, Loader2, AlertCircle } from "lucide-react";
+import type { SearchSuggestion } from "@/modules/weather/types/weather.types";
 
 import { useWeather } from "@/modules/weather/hooks/useWeather";
 import { useWeatherStore } from "@/modules/weather/store/weather.store";
@@ -34,12 +35,40 @@ export default function DashboardPage() {
     fetchSuggestions,
     currentCity,
     errorType,
+    isSearching,
+    searchError,
   } = useWeatherStore();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [suggestionsVisible, setSuggestionsVisible] = useState(false);
+  const [mobileSelectedIndex, setMobileSelectedIndex] = useState(-1);
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  React.useEffect(() => {
+    // eslint-disable-next-line
+    setMobileSelectedIndex(-1);
+  }, [searchQuery, searchSuggestions]);
+
+  const handleMobileKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!suggestionsVisible) return;
+    
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setMobileSelectedIndex((prev) => (prev < searchSuggestions.length - 1 ? prev + 1 : prev));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setMobileSelectedIndex((prev) => (prev > 0 ? prev - 1 : -1));
+    } else if (e.key === "Enter") {
+      if (mobileSelectedIndex >= 0 && mobileSelectedIndex < searchSuggestions.length) {
+        e.preventDefault();
+        handleSuggestionSelect(searchSuggestions[mobileSelectedIndex]);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setSuggestionsVisible(false);
+    }
+  };
 
   const handleSearchChange = (val: string) => {
     setSearchQuery(val);
@@ -66,8 +95,14 @@ export default function DashboardPage() {
     }, 300);
   };
 
-  const handleSuggestionSelect = (cityName: string) => {
-    fetchWeather(cityName);
+  const handleSuggestionSelect = (suggestion: SearchSuggestion | string) => {
+    if (typeof suggestion === "string") {
+      fetchWeather(suggestion);
+    } else if (suggestion.lat !== undefined && suggestion.lon !== undefined) {
+      useWeatherStore.getState().fetchWeatherByCoordinates(suggestion.lat, suggestion.lon, suggestion.name, suggestion.region, suggestion.country);
+    } else {
+      fetchWeather(suggestion.name);
+    }
     setSearchQuery("");
     setSuggestionsVisible(false);
   };
@@ -116,6 +151,8 @@ export default function DashboardPage() {
           onFocus={() => setSuggestionsVisible(true)}
           onBlur={() => setTimeout(() => setSuggestionsVisible(false), 200)}
           showProfile={true}
+          isSearching={isSearching}
+          searchError={searchError}
         />
         <div className="flex-1 flex items-center justify-center">
           <ErrorCard
@@ -135,7 +172,15 @@ export default function DashboardPage() {
   if (isLoading && !currentWeather) {
     return (
       <div className="min-h-screen flex flex-col bg-background text-foreground transition-colors duration-200">
-        <Navbar variant="dashboard" showProfile={true} />
+        <Navbar
+          variant="dashboard"
+          searchQuery={searchQuery}
+          onSearchChange={(e) => handleSearchChange(e.target.value)}
+          onSearchSubmit={handleSearchSubmit}
+          showProfile={true}
+          isSearching={isSearching}
+          searchError={searchError}
+        />
         <DashboardSkeleton />
       </div>
     );
@@ -158,6 +203,8 @@ export default function DashboardPage() {
         onFocus={() => setSuggestionsVisible(true)}
         onBlur={() => setTimeout(() => setSuggestionsVisible(false), 200)}
         showProfile={true}
+        isSearching={isSearching}
+        searchError={searchError}
       />
 
       <PageContainer size="lg" className="flex-1 py-6 space-y-10">
@@ -178,35 +225,70 @@ export default function DashboardPage() {
               <Search className="absolute left-3.5 h-4.5 w-4.5 text-muted-foreground" />
               <input
                 type="text"
+                role="combobox"
+                aria-expanded={suggestionsVisible}
+                aria-controls="mobile-search-listbox"
+                aria-activedescendant={mobileSelectedIndex >= 0 ? `mobile-search-item-${mobileSelectedIndex}` : undefined}
                 placeholder="Search city..."
                 value={searchQuery}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 onFocus={() => setSuggestionsVisible(true)}
                 onBlur={() => setTimeout(() => setSuggestionsVisible(false), 200)}
+                onKeyDown={handleMobileKeyDown}
                 className="w-full h-11 pl-10 pr-4 rounded-xl border border-border bg-card text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40 transition-all"
               />
             </form>
 
-            {suggestionsVisible && searchSuggestions.length > 0 && (
+            {suggestionsVisible && (
               <div className="absolute top-12 left-0 w-full rounded-xl border border-border bg-card/95 backdrop-blur-md shadow-lg overflow-hidden z-50">
-                <ul className="divide-y divide-border/40 max-h-60 overflow-y-auto">
-                  {searchSuggestions.map((item) => (
-                    <li key={item.id}>
-                      <button
-                        type="button"
-                        onMouseDown={() => handleSuggestionSelect(item.name)}
-                        className="w-full text-left px-4 py-3 text-xs hover:bg-primary/10 transition-colors text-foreground block cursor-pointer"
-                      >
-                        <span className="font-semibold">{item.name}</span>
-                        {(item.region || item.country) && (
-                          <span className="text-[10px] text-muted-foreground block truncate">
-                            {item.region ? `${item.region}, ` : ""}{item.country}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                {isSearching ? (
+                  <div className="flex items-center justify-center p-4 text-xs text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Searching locations...
+                  </div>
+                ) : searchError ? (
+                  <div className="flex items-center justify-center p-4 text-xs text-destructive">
+                    <AlertCircle className="h-4 w-4 mr-2" />
+                    {searchError}
+                  </div>
+                ) : searchSuggestions.length > 0 ? (
+                  <ul 
+                    id="mobile-search-listbox" 
+                    role="listbox" 
+                    className="divide-y divide-border/40 max-h-60 overflow-y-auto"
+                  >
+                    {searchSuggestions.map((item, index) => {
+                      const isSelected = index === mobileSelectedIndex;
+                      return (
+                        <li key={item.id} role="option" aria-selected={isSelected} id={`mobile-search-item-${index}`}>
+                          <button
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              handleSuggestionSelect(item);
+                            }}
+                            onMouseEnter={() => setMobileSelectedIndex(index)}
+                            className={`w-full text-left px-4 py-3 text-xs transition-colors block cursor-pointer flex items-center gap-3 ${isSelected ? "bg-primary/10 text-primary" : "text-foreground hover:bg-primary/5"}`}
+                          >
+                            <MapPin className={`h-4 w-4 flex-shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
+                            <div className="flex flex-col overflow-hidden">
+                              <span className="font-semibold truncate">{item.name}</span>
+                              {(item.region || item.country) && (
+                                <span className={`text-[10px] block truncate ${isSelected ? "text-primary/70" : "text-muted-foreground"}`}>
+                                  {item.region ? `${item.region}, ` : ""}{item.country}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : searchQuery.trim().length >= 2 ? (
+                  <div className="flex items-center justify-center p-4 text-xs text-muted-foreground">
+                    No locations found
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
@@ -299,15 +381,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Right Column: AI Preview & Saved Locations */}
+          {/* Right Column: Saved Locations */}
           <div className="lg:col-span-5 xl:col-span-4 space-y-8">
-            <div className="space-y-4">
-              <AssistantPreview
-                placeholder={data.aiAssistant.placeholder}
-                defaultAnswer={data.aiAssistant.defaultAnswer}
-              />
-            </div>
-
             {/* Favorite Cities */}
             <div className="space-y-4">
               <SectionHeader
@@ -395,6 +470,7 @@ export default function DashboardPage() {
           </span>
         </div>
       </footer>
+      <FloatingAssistant />
     </div>
   );
 }

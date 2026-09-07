@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils";
 import { Logo } from "@/components/common/logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { ROUTES } from "@/constants/routes";
-import { User, Bell, Search } from "lucide-react";
+import { User, Bell, Search, MapPin, Loader2, AlertCircle } from "lucide-react";
+import type { SearchSuggestion } from "@/modules/weather/types/weather.types";
 
 export interface NavbarProps extends React.HTMLAttributes<HTMLElement> {
   showProfile?: boolean;
@@ -14,11 +15,13 @@ export interface NavbarProps extends React.HTMLAttributes<HTMLElement> {
   searchQuery?: string;
   onSearchChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSearchSubmit?: (e: React.FormEvent) => void;
-  suggestions?: Array<{ id: number; name: string; region: string; country: string }>;
-  onSuggestionSelect?: (cityName: string) => void;
+  suggestions?: SearchSuggestion[];
+  onSuggestionSelect?: (suggestion: SearchSuggestion | string) => void;
   suggestionsVisible?: boolean;
   onFocus?: () => void;
   onBlur?: () => void;
+  isSearching?: boolean;
+  searchError?: string | null;
 }
 
 export function Navbar({
@@ -32,9 +35,37 @@ export function Navbar({
   suggestionsVisible = false,
   onFocus,
   onBlur,
+  isSearching = false,
+  searchError = null,
   className,
   ...props
 }: NavbarProps) {
+  const [selectedIndex, setSelectedIndex] = React.useState(-1);
+
+  React.useEffect(() => {
+    // eslint-disable-next-line
+    setSelectedIndex(-1);
+  }, [searchQuery, suggestions]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!suggestionsVisible) return;
+    
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev < suggestions.length - 1 ? prev + 1 : prev));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : -1));
+    } else if (e.key === "Enter") {
+      if (selectedIndex >= 0 && selectedIndex < suggestions.length) {
+        e.preventDefault();
+        onSuggestionSelect?.(suggestions[selectedIndex]);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onBlur?.();
+    }
+  };
   const handleAlert = (msg: string) => {
     alert(msg);
   };
@@ -77,35 +108,73 @@ export function Navbar({
               <Search className="absolute left-3 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
+                role="combobox"
+                aria-expanded={suggestionsVisible}
+                aria-controls="navbar-search-listbox"
+                aria-activedescendant={selectedIndex >= 0 ? `navbar-search-item-${selectedIndex}` : undefined}
                 placeholder="Search city..."
                 value={searchQuery}
                 onChange={onSearchChange}
                 onFocus={onFocus}
                 onBlur={onBlur}
+                onKeyDown={handleKeyDown}
                 className="w-full h-9 pl-9 pr-4 rounded-full border border-border bg-background/50 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40 transition-all"
               />
             </form>
 
-            {suggestionsVisible && suggestions.length > 0 && (
+            {suggestionsVisible && (
               <div className="absolute top-10 left-0 w-full rounded-xl border border-border bg-card/95 backdrop-blur-md shadow-lg overflow-hidden z-50">
-                <ul className="divide-y divide-border/40 max-h-60 overflow-y-auto">
-                  {suggestions.map((item) => (
-                    <li key={item.id}>
-                      <button
-                        type="button"
-                        onMouseDown={() => onSuggestionSelect?.(item.name)}
-                        className="w-full text-left px-4 py-2.5 text-xs hover:bg-primary/10 transition-colors text-foreground block cursor-pointer"
-                      >
-                        <span className="font-semibold">{item.name}</span>
-                        {(item.region || item.country) && (
-                          <span className="text-[10px] text-muted-foreground block truncate">
-                            {item.region ? `${item.region}, ` : ""}{item.country}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                {isSearching ? (
+                  <div className="flex items-center justify-center p-4 text-xs text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Searching locations...
+                  </div>
+                ) : searchError ? (
+                  <div className="flex items-center justify-center p-4 text-xs text-destructive">
+                    <AlertCircle className="h-4 w-4 mr-2" />
+                    {searchError}
+                  </div>
+                ) : suggestions.length > 0 ? (
+                  <ul 
+                    id="navbar-search-listbox" 
+                    role="listbox" 
+                    className="divide-y divide-border/40 max-h-60 overflow-y-auto"
+                  >
+                    {suggestions.map((item, index) => {
+                      const isSelected = index === selectedIndex;
+                      return (
+                        <li key={item.id} role="option" aria-selected={isSelected} id={`navbar-search-item-${index}`}>
+                          <button
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault(); // Prevent onBlur from firing before click
+                              onSuggestionSelect?.(item);
+                            }}
+                            onMouseEnter={() => setSelectedIndex(index)}
+                            className={cn(
+                              "w-full text-left px-4 py-2.5 text-xs transition-colors block cursor-pointer flex items-center gap-3",
+                              isSelected ? "bg-primary/10 text-primary" : "text-foreground hover:bg-primary/5"
+                            )}
+                          >
+                            <MapPin className={cn("h-4 w-4 flex-shrink-0", isSelected ? "text-primary" : "text-muted-foreground")} />
+                            <div className="flex flex-col overflow-hidden">
+                              <span className="font-semibold truncate">{item.name}</span>
+                              {(item.region || item.country) && (
+                                <span className={cn("text-[10px] block truncate", isSelected ? "text-primary/70" : "text-muted-foreground")}>
+                                  {item.region ? `${item.region}, ` : ""}{item.country}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : searchQuery.trim().length >= 2 ? (
+                  <div className="flex items-center justify-center p-4 text-xs text-muted-foreground">
+                    No locations found
+                  </div>
+                ) : null}
               </div>
             )}
           </div>

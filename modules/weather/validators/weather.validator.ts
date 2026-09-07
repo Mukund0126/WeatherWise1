@@ -10,7 +10,7 @@ export const weatherValidator = {
     if (trimmed.length < 2) {
       return { isValid: false, error: "City name must be at least 2 characters long." };
     }
-    const cityRegex = /^[a-zA-Z\s\-',()]+$/;
+    const cityRegex = /^[a-zA-Z0-9\s\-',():]+$/;
     if (!cityRegex.test(trimmed)) {
       return { isValid: false, error: "City name contains invalid characters." };
     }

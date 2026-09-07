@@ -95,10 +95,14 @@ export interface SearchHistoryItem {
   id: string;
   query: string;
   timestamp: number;
+  region?: string;
+  country?: string;
+  lat?: number;
+  lon?: number;
 }
 
 export interface SearchSuggestion {
-  id: number;
+  id: number | string;
   name: string;
   region: string;
   country: string;

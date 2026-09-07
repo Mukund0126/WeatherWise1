@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { weatherValidator } from "@/modules/weather/validators/weather.validator";
 import { WeatherApiProvider } from "@/modules/weather/api/weather.engine";
+import { OpenMeteoProvider } from "@/modules/weather/api/open-meteo.provider";
 import { weatherNormalizer } from "@/modules/weather/normalizers/weather.normalizer";
+import { openMeteoNormalizer } from "@/modules/weather/normalizers/open-meteo.normalizer";
 import { weatherMapper } from "@/modules/weather/mappers/weather.mapper";
 import { logger } from "@/lib/logger";
 
@@ -10,6 +12,9 @@ export async function GET(request: NextRequest) {
   const city = searchParams.get("city");
   const lat = searchParams.get("lat");
   const lon = searchParams.get("lon");
+  const name = searchParams.get("name") || undefined;
+  const region = searchParams.get("region") || undefined;
+  const country = searchParams.get("country") || undefined;
 
   try {
     let query = "";
@@ -44,10 +49,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const provider = new WeatherApiProvider();
-    const raw = await provider.getForecast(query, 7);
+    let raw: unknown;
+    let normalized;
 
-    const normalized = weatherNormalizer.normalize(raw);
+    if (lat || lon) {
+      const provider = new OpenMeteoProvider();
+      raw = await provider.getForecastByCoords(Number(lat), Number(lon), name, region, country, 7);
+      normalized = openMeteoNormalizer.normalize(raw);
+    } else {
+      const provider = new WeatherApiProvider();
+      raw = await provider.getForecastByCity(query, 7);
+      normalized = weatherNormalizer.normalize(raw);
+    }
+
     const mapped = weatherMapper.map(normalized);
 
     return NextResponse.json(mapped);

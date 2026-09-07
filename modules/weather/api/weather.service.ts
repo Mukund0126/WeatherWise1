@@ -12,10 +12,10 @@ const CACHE_LIFETIME_MS = 5 * 60 * 1000;
 
 export const weatherService = {
   async fetchWeather(
-    params: { city?: string; lat?: number; lon?: number },
+    params: { city?: string; lat?: number; lon?: number; name?: string; region?: string; country?: string },
     signal?: AbortSignal
   ): Promise<WeatherData> {
-    const { city, lat, lon } = params;
+    const { city, lat, lon, name, region, country } = params;
 
     let cacheKey = "";
     let url = "/api/weather?";
@@ -23,6 +23,9 @@ export const weatherService = {
     if (lat !== undefined && lon !== undefined) {
       cacheKey = `coords:${lat.toFixed(4)},${lon.toFixed(4)}`;
       url += `lat=${lat}&lon=${lon}`;
+      if (name) url += `&name=${encodeURIComponent(name)}`;
+      if (region) url += `&region=${encodeURIComponent(region)}`;
+      if (country) url += `&country=${encodeURIComponent(country)}`;
     } else if (city) {
       cacheKey = `city:${city.trim().toLowerCase()}`;
       url += `city=${encodeURIComponent(city.trim())}`;
