@@ -50,6 +50,18 @@ export interface CurrentWeather {
   icon: string;
 }
 
+export interface FavoriteCityItem {
+  id: string;
+  name: string;
+  temp: number;
+  condition: string;
+  icon: string;
+  lat?: number;
+  lon?: number;
+  region?: string;
+  country?: string;
+}
+
 export interface WeatherData {
   location: WeatherLocation;
   greeting: {
@@ -73,12 +85,7 @@ export interface WeatherData {
   hourlyForecast: HourlyForecast[];
   dailyForecast: ForecastDay[];
   highlights: WeatherHighlight[];
-  favorites: Array<{
-    name: string;
-    temp: number;
-    condition: string;
-    icon: string;
-  }>;
+  favorites: FavoriteCityItem[];
   aiAssistant: {
     placeholder: string;
     defaultAnswer: string;

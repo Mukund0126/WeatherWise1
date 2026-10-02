@@ -1,7 +1,7 @@
 import React from "react";
 import { Card } from "@/components/ui/card";
 import { Heading } from "@/components/ui/heading";
-import { Thermometer, ArrowUp, ArrowDown, Sun, CloudSun, Cloud } from "lucide-react";
+import { Thermometer, ArrowUp, ArrowDown, Sun, CloudSun, Cloud, Heart } from "lucide-react";
 import * as motion from "framer-motion/client";
 
 interface WeatherHeroProps {
@@ -12,6 +12,8 @@ interface WeatherHeroProps {
   high: number;
   low: number;
   icon: string;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
 }
 
 export function WeatherHero({
@@ -22,6 +24,8 @@ export function WeatherHero({
   high,
   low,
   icon,
+  isFavorite = false,
+  onToggleFavorite,
 }: WeatherHeroProps) {
   const renderWeatherIcon = () => {
     switch (icon) {
@@ -73,12 +77,29 @@ export function WeatherHero({
             <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">
               Current Weather
             </span>
-            <Heading
-              level="h2"
-              className="text-2xl sm:text-3xl font-extrabold tracking-tight mt-1 text-foreground"
-            >
-              {city}
-            </Heading>
+            <div className="flex items-center gap-3 mt-1">
+              <Heading
+                level="h2"
+                className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground"
+              >
+                {city}
+              </Heading>
+              {onToggleFavorite && (
+                <button
+                  type="button"
+                  onClick={onToggleFavorite}
+                  className={`p-2 rounded-full transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                    isFavorite
+                      ? "bg-rose-500/15 text-rose-500 hover:bg-rose-500/25 scale-105 shadow-sm"
+                      : "bg-muted/60 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-500"
+                  }`}
+                  title={isFavorite ? "Remove from favorite cities" : "Save as favorite city"}
+                  aria-label={isFavorite ? "Remove from favorite cities" : "Save as favorite city"}
+                >
+                  <Heart className={`h-5 w-5 transition-transform active:scale-125 ${isFavorite ? "fill-rose-500 text-rose-500" : ""}`} />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex items-baseline gap-2.5">

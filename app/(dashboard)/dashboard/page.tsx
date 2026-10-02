@@ -13,7 +13,7 @@ import { QuickActionCard } from "@/modules/dashboard/components/quick-action-car
 import { FavoriteCityCard } from "@/modules/dashboard/components/favorite-city-card";
 import { FloatingAssistant } from "@/modules/assistant/components/floating-assistant";
 import { SectionHeader } from "@/modules/dashboard/components/section-header";
-import { Search, MapPin, Loader2, AlertCircle } from "lucide-react";
+import { Search, MapPin, Loader2, AlertCircle, Heart } from "lucide-react";
 import type { SearchSuggestion } from "@/modules/weather/types/weather.types";
 
 import { useWeather } from "@/modules/weather/hooks/useWeather";
@@ -37,6 +37,10 @@ export default function DashboardPage() {
     errorType,
     isSearching,
     searchError,
+    favoriteCities,
+    toggleFavoriteCity,
+    removeFavoriteCity,
+    isFavorite,
   } = useWeatherStore();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -313,6 +317,20 @@ export default function DashboardPage() {
               high={data.hero.high}
               low={data.hero.low}
               icon={data.hero.icon}
+              isFavorite={isFavorite(data.hero.city)}
+              onToggleFavorite={() =>
+                toggleFavoriteCity({
+                  id: String(Date.now()),
+                  name: data.hero.city,
+                  temp: data.hero.temp,
+                  condition: data.hero.condition,
+                  icon: data.hero.icon,
+                  lat: data.location.lat,
+                  lon: data.location.lon,
+                  region: data.location.region,
+                  country: data.location.country,
+                })
+              }
             />
           </div>
         </div>
@@ -389,18 +407,31 @@ export default function DashboardPage() {
                 title="Saved Locations"
                 description="Monitored city temperatures."
               />
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
-                {data.favorites.map((city, index) => (
-                  <FavoriteCityCard
-                    key={index}
-                    name={city.name}
-                    temp={city.temp}
-                    condition={city.condition}
-                    icon={city.icon}
-                    onClick={() => handleSuggestionSelect(city.name)}
-                  />
-                ))}
-              </div>
+              {favoriteCities.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
+                  {favoriteCities.map((city) => (
+                    <FavoriteCityCard
+                      key={city.id || city.name}
+                      name={city.name}
+                      temp={city.temp}
+                      condition={city.condition}
+                      icon={city.icon}
+                      onClick={() => handleSuggestionSelect(city.name)}
+                      onRemove={() => removeFavoriteCity(city.name)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="p-6 text-center border border-dashed border-border/60 rounded-2xl bg-card/30 space-y-2">
+                  <Heart className="h-6 w-6 text-rose-500/60 mx-auto animate-pulse" />
+                  <p className="text-xs font-semibold text-muted-foreground">
+                    No favorite cities saved yet.
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Click the heart icon on any weather card to save your favorite locations.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>

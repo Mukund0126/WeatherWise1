@@ -1,12 +1,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { weatherService } from "../api/weather.service";
-import { WeatherData, SearchHistoryItem, SearchSuggestion } from "../types/weather.types";
+import { WeatherData, SearchHistoryItem, SearchSuggestion, FavoriteCityItem } from "../types/weather.types";
 import { logger } from "@/lib/logger";
 
 interface WeatherState {
   currentCity: string;
   recentSearches: SearchHistoryItem[];
+  favoriteCities: FavoriteCityItem[];
   currentWeather: WeatherData | null;
   isLoading: boolean;
   error: string | null;
@@ -21,6 +22,10 @@ interface WeatherState {
   fetchSuggestions: (query: string, abortSignal?: AbortSignal) => Promise<void>;
   clearError: () => void;
   addRecentSearch: (data: string | { name: string; region?: string; country?: string; lat?: number; lon?: number }) => void;
+  addFavoriteCity: (city: FavoriteCityItem) => void;
+  removeFavoriteCity: (cityName: string) => void;
+  toggleFavoriteCity: (city: FavoriteCityItem) => void;
+  isFavorite: (cityName: string) => boolean;
 }
 
 export const useWeatherStore = create<WeatherState>()(
@@ -28,6 +33,11 @@ export const useWeatherStore = create<WeatherState>()(
     (set, get) => ({
       currentCity: "Ahmedabad",
       recentSearches: [],
+      favoriteCities: [
+        { id: "fav-1", name: "London", temp: 18, condition: "Cloudy", icon: "cloud" },
+        { id: "fav-2", name: "Tokyo", temp: 24, condition: "Sunny", icon: "sun" },
+        { id: "fav-3", name: "New York", temp: 21, condition: "Partly Cloudy", icon: "cloud-sun" },
+      ],
       currentWeather: null,
       isLoading: false,
       error: null,
@@ -174,12 +184,42 @@ export const useWeatherStore = create<WeatherState>()(
         const updated = [newItem, ...filtered].slice(0, 5);
         set({ recentSearches: updated });
       },
+
+      addFavoriteCity: (cityItem: FavoriteCityItem) => {
+        const existing = get().favoriteCities;
+        const exists = existing.some((c) => c.name.toLowerCase() === cityItem.name.toLowerCase());
+        if (!exists) {
+          set({ favoriteCities: [cityItem, ...existing] });
+        }
+      },
+
+      removeFavoriteCity: (cityName: string) => {
+        const filtered = get().favoriteCities.filter(
+          (c) => c.name.toLowerCase() !== cityName.toLowerCase()
+        );
+        set({ favoriteCities: filtered });
+      },
+
+      toggleFavoriteCity: (cityItem: FavoriteCityItem) => {
+        const isFav = get().isFavorite(cityItem.name);
+        if (isFav) {
+          get().removeFavoriteCity(cityItem.name);
+        } else {
+          get().addFavoriteCity(cityItem);
+        }
+      },
+
+      isFavorite: (cityName: string) => {
+        if (!cityName) return false;
+        return get().favoriteCities.some((c) => c.name.toLowerCase() === cityName.toLowerCase());
+      },
     }),
     {
       name: "weatherwise-store",
       partialize: (state) => ({
         currentCity: state.currentCity,
         recentSearches: state.recentSearches,
+        favoriteCities: state.favoriteCities,
       }),
     }
   )

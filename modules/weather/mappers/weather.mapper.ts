@@ -237,18 +237,21 @@ export const weatherMapper = {
     // Favorites Placeholder (we'll fetch or display static fallback city cards)
     const favorites = [
       {
+        id: "fav-london",
         name: "London",
         temp: 18,
         condition: "Partly Cloudy",
         icon: "cloud-sun",
       },
       {
+        id: "fav-ny",
         name: "New York",
         temp: 24,
         condition: "Sunny",
         icon: "sun",
       },
       {
+        id: "fav-mumbai",
         name: "Mumbai",
         temp: 30,
         condition: "Light Rain",
