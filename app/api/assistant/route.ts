@@ -26,7 +26,10 @@ export async function POST(request: NextRequest) {
     const safeMessage = validation.sanitizedMessage!;
 
     // Process message through Gemini Service
-    const responseText = await geminiService.getAssistantResponse(safeMessage);
+    const responseText = await geminiService.getAssistantResponse(
+      safeMessage,
+      assistantReq.weatherContext
+    );
 
     const response: AssistantResponse = {
       answer: responseText,

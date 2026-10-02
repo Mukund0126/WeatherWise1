@@ -111,7 +111,7 @@ export function FloatingAssistant() {
     return responses[Math.floor(Math.random() * responses.length)];
   };
 
-  const handleSendMessage = (text: string) => {
+  const handleSendMessage = async (text: string) => {
     if (!text.trim()) return;
 
     // Add user message
@@ -126,18 +126,69 @@ export function FloatingAssistant() {
     setInputValue("");
     setIsTyping(true);
 
-    // Simulate response delay
-    setTimeout(() => {
-      setIsTyping(false);
-      const aiResponse = generateAIResponse(text);
+    try {
+      // Helper to safely extract metric values from currentWeather.metrics array
+      const findMetric = (keyword: string) =>
+        currentWeather?.metrics?.find((m) =>
+          m.name.toLowerCase().includes(keyword.toLowerCase())
+        )?.value;
+
+      // Construct weather context payload from store state
+      const weatherContext = currentWeather
+        ? {
+            city: currentWeather.hero.city,
+            temp: currentWeather.hero.temp,
+            feelsLike: currentWeather.hero.feelsLike,
+            condition: currentWeather.hero.condition,
+            humidity: findMetric("humidity"),
+            windSpeed: findMetric("wind"),
+            uvIndex: findMetric("uv"),
+            high: currentWeather.hero.high,
+            low: currentWeather.hero.low,
+            recommendationScore: currentWeather.recommendation.score,
+            forecastSummary: currentWeather.dailyForecast
+              ?.slice(0, 4)
+              .map((d) => `${d.day}: ${d.condition}, ${d.high}°C/${d.low}°C`)
+              .join("; "),
+          }
+        : undefined;
+
+      const res = await fetch("/api/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, weatherContext }),
+      });
+
+      const data = await res.json();
+      let aiResponseText = "";
+
+      if (res.ok && data.answer) {
+        aiResponseText = data.answer;
+      } else {
+        // Graceful fallback to client heuristics if API error or missing GEMINI_API_KEY
+        aiResponseText = generateAIResponse(text);
+      }
+
       const aiMsg: Message = {
         id: String(Date.now() + 1),
         sender: "assistant",
-        text: aiResponse,
+        text: aiResponseText,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, aiMsg]);
-    }, 1000);
+    } catch {
+      // Fallback on network failure
+      const fallbackText = generateAIResponse(text);
+      const aiMsg: Message = {
+        id: String(Date.now() + 1),
+        sender: "assistant",
+        text: fallbackText,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, aiMsg]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
