@@ -48,16 +48,14 @@ export function FloatingAssistant() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const isListeningRef = useRef(false);
-  const shouldKeepListeningRef = useRef(false);
   const transcriptRef = useRef("");
-  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Synchronize listening ref for event handlers
   useEffect(() => {
     isListeningRef.current = isListening;
   }, [isListening]);
 
-  // Check speech recognition support on mount
+  // Check speech recognition support on mount — MANUAL START/STOP only
   useEffect(() => {
     if (typeof window !== "undefined") {
       const SpeechRecognition =
@@ -69,66 +67,52 @@ export function FloatingAssistant() {
         recognition.interimResults = true;
         recognition.lang = "en-US";
 
+        // Stream transcript into the input field — NO auto-send
         recognition.onresult = (event: any) => {
           let accumulated = "";
           for (let i = 0; i < event.results.length; ++i) {
             accumulated += event.results[i][0].transcript;
           }
-
           const trimmed = accumulated.trim();
           if (trimmed) {
             setInputValue(trimmed);
             transcriptRef.current = trimmed;
-
-            // Reset 3.5-second silence buffer before auto-dispatching
-            if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-            silenceTimerRef.current = setTimeout(() => {
-              if (shouldKeepListeningRef.current) {
-                shouldKeepListeningRef.current = false;
-                try {
-                  recognition.stop();
-                } catch {
-                  // Ignore
-                }
-              }
-            }, 3500);
           }
         };
 
         recognition.onerror = (err: any) => {
-          // Ignore non-fatal speech errors (no-speech, aborted) when user is still listening
-          if ((err.error === "no-speech" || err.error === "aborted") && shouldKeepListeningRef.current) {
+          // Ignore non-fatal "no-speech" / "aborted" errors while actively listening
+          if (
+            (err.error === "no-speech" || err.error === "aborted") &&
+            isListeningRef.current
+          ) {
+            // Auto-restart so the mic stays open even after silence
+            try {
+              recognition.start();
+            } catch {
+              // already running or can't restart — ignore
+            }
             return;
           }
           setIsListening(false);
           isListeningRef.current = false;
-          shouldKeepListeningRef.current = false;
         };
 
+        // When Chrome/browser ends recognition for ANY reason, auto-restart
+        // if the user hasn't manually stopped (isListeningRef is still true).
         recognition.onend = () => {
-          if (silenceTimerRef.current) {
-            clearTimeout(silenceTimerRef.current);
-          }
-
-          // If Chrome closed recognition unexpectedly but user is still in listening mode and hasn't finished
-          if (shouldKeepListeningRef.current && !transcriptRef.current.trim()) {
+          if (isListeningRef.current) {
+            // User hasn't pressed Stop yet — keep mic alive
             try {
               recognition.start();
-              return;
             } catch {
-              // Fall through if restart fails
+              // Couldn't restart — surface the stop to UI
+              setIsListening(false);
+              isListeningRef.current = false;
             }
+            return;
           }
-
-          const textToSend = transcriptRef.current.trim();
-          setIsListening(false);
-          isListeningRef.current = false;
-          shouldKeepListeningRef.current = false;
-
-          if (textToSend) {
-            handleVoiceInput(textToSend);
-            transcriptRef.current = "";
-          }
+          // User manually stopped — do nothing (text is already in the input box)
         };
 
         recognitionRef.current = recognition;
@@ -323,31 +307,30 @@ export function FloatingAssistant() {
     if (!speechSupported || !recognitionRef.current) return;
 
     if (isListening) {
-      shouldKeepListeningRef.current = false;
+      // ---- STOP: user manually stops mic ----
       isListeningRef.current = false;
       setIsListening(false);
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       try {
         recognitionRef.current.stop();
       } catch {
         // Ignore stop error
       }
+      // Text stays in the input box — user presses Send when ready
     } else {
+      // ---- START: user manually starts mic ----
       try {
-        // Pre-request microphone permission to ensure Chrome allows audio stream
+        // Pre-request microphone permission so Chrome allows the audio stream
         if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
           await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => {});
         }
 
         transcriptRef.current = "";
         setInputValue("");
-        shouldKeepListeningRef.current = true;
         isListeningRef.current = true;
         setIsListening(true);
 
         recognitionRef.current.start();
       } catch {
-        shouldKeepListeningRef.current = false;
         isListeningRef.current = false;
         setIsListening(false);
       }
