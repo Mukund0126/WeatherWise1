@@ -3,17 +3,18 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { useWeatherStore } from "@/modules/weather/store/weather.store";
-import { Card } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
-import { Button } from "@/components/ui/button";
 import {
-  Sparkles,
   BrainCircuit,
-  X,
   Send,
-  MessageSquare,
   User,
-  Minimize2
+  Minimize2,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  MessageSquare,
+  X
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -25,22 +26,60 @@ interface Message {
 }
 
 export function FloatingAssistant() {
-  const { currentWeather } = useWeatherStore();
+  const { currentWeather, fetchWeather } = useWeatherStore();
   const [isOpen, setIsOpen] = useState(false);
 
-  // Initialize with welcome message directly to avoid useEffect setState
+  // Initialize with welcome message
   const [messages, setMessages] = useState<Message[]>(() => [
     {
       id: "welcome",
       sender: "assistant",
-      text: `Hello! I am your WeatherWise AI Companion. Ask me anything about the current weather conditions, outdoor activities, clothing recommendations, or travel safety!`,
+      text: `Hello! I am your WeatherWise AI Companion. Ask me anything about current weather, outdoor activities, clothing advice, or speak commands like "Weather in Tokyo"!`,
       timestamp: new Date(),
     },
   ]);
 
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  const [speechSupported, setSpeechSupported] = useState(false);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  // Check speech recognition support on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        setSpeechSupported(true);
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = "en-US";
+
+        recognition.onresult = (event: any) => {
+          const transcript = event.results[0][0].transcript;
+          setIsListening(false);
+          if (transcript) {
+            handleVoiceInput(transcript);
+          }
+        };
+
+        recognition.onerror = () => {
+          setIsListening(false);
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+      }
+    }
+  }, []);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -49,49 +88,56 @@ export function FloatingAssistant() {
     }
   }, [messages, isOpen, isTyping]);
 
+  // Clean up speech synthesis on unmount
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
   const generateAIResponse = (query: string): string => {
     const q = query.toLowerCase();
     const city = currentWeather?.hero.city || "your location";
     const temp = currentWeather?.hero.temp !== undefined ? `${currentWeather.hero.temp}°C` : "";
     const cond = currentWeather?.hero.condition || "";
 
-    // Context-aware dynamic responses
     if (q.includes("rain") || q.includes("umbrella") || q.includes("wet")) {
       const isRainy = cond.toLowerCase().includes("rain") || cond.toLowerCase().includes("drizzle") || cond.toLowerCase().includes("shower");
       if (isRainy) {
-        return `Yes, it is currently ${cond} in ${city} (${temp}). I highly recommend carrying an umbrella or a rain jacket if you go outside!`;
+        return `Yes, it is currently ${cond} in ${city} (${temp}). I highly recommend carrying an umbrella or a rain jacket!`;
       }
-      // Check forecast
       const willRain = currentWeather?.dailyForecast?.some(d => d.condition.toLowerCase().includes("rain"));
       if (willRain) {
-        return `It's not raining right now in ${city}, but the forecast indicates rain is expected later. It would be wise to carry an umbrella just in case!`;
+        return `It's not raining right now in ${city}, but the forecast indicates rain later today. Carrying an umbrella is a great idea!`;
       }
-      return `There is no rain in the immediate forecast for ${city}. Current conditions are ${cond || "clear"} with a temperature of ${temp}. You probably don't need an umbrella!`;
+      return `There is no rain in the immediate forecast for ${city}. Current conditions are ${cond || "clear"} at ${temp}. You won't need an umbrella!`;
     }
 
     if (q.includes("cloth") || q.includes("wear") || q.includes("jacket") || q.includes("coat")) {
       const t = currentWeather?.hero.temp;
       if (t !== undefined) {
         if (t < 15) {
-          return `It's quite chilly in ${city} at ${temp}. I recommend layering up with a warm jacket or sweater and long pants.`;
+          return `It's chilly in ${city} at ${temp}. Wear a warm coat or sweater and long trousers.`;
         } else if (t > 28) {
-          return `It's warm in ${city} (${temp}). Light cotton clothing, sunglasses, and sunscreen are your best choice today!`;
+          return `It's warm in ${city} (${temp}). Light breathable clothes, sunglasses, and sunscreen are best today!`;
         } else {
-          return `The temperature in ${city} is a comfortable ${temp}. A light t-shirt or a long-sleeve shirt with jeans should be perfect.`;
+          return `The temperature in ${city} is a comfortable ${temp}. A light jacket or long-sleeve shirt is ideal.`;
         }
       }
-      return `I'd suggest checking the current temperature, but generally dressing in light, breathable layers is safe unless it's cold or raining!`;
+      return `Dressing in light layers is safe unless it's cold or raining!`;
     }
 
     if (q.includes("run") || q.includes("exercise") || q.includes("cricket") || q.includes("play") || q.includes("outdoor")) {
       const score = currentWeather?.recommendation.score || 5;
       const text = currentWeather?.recommendation.text || "";
       if (score >= 7) {
-        return `It's a fantastic day for outdoor activities in ${city}! The recommendation score is ${score}/10. ${text}`;
+        return `It's a fantastic day for outdoor activities in ${city}! Comfort score: ${score}/10. ${text}`;
       } else if (score >= 4) {
         return `Conditions are moderate for outdoors in ${city} (Score: ${score}/10). ${text}`;
       } else {
-        return `I'd advise staying indoors or delaying outdoor plans in ${city}. The comfort score is low (${score}/10). ${text}`;
+        return `I'd advise staying indoors or delaying outdoor plans in ${city}. Comfort score is low (${score}/10). ${text}`;
       }
     }
 
@@ -99,14 +145,12 @@ export function FloatingAssistant() {
       if (currentWeather) {
         return `Currently in ${city}, the weather is ${cond} with a temperature of ${temp} (feels like ${currentWeather.hero.feelsLike}°C). Today's range is ${currentWeather.hero.low}°C to ${currentWeather.hero.high}°C.`;
       }
-      return `I can't access the live metrics right now, but please double-check the dashboard once it loads!`;
+      return `I can't access live metrics right now, but please double-check the dashboard once loaded!`;
     }
 
-    // Default responses
     const responses = [
-      `That's an interesting question! For ${city}, the current condition is ${cond || "stable"} at ${temp || "ambient temperature"}. Let me know if you want clothing advice or outdoor safety tips.`,
-      `I've analyzed the meteorological models for ${city}. The air comfort is currently rated as "${currentWeather?.recommendation.metrics.outdoorComfort || "Fair"}". Feel free to ask more specific questions!`,
-      `Atmospheric pressure is stable in ${city}. If you're planning any trips or events, let me know so I can look up the safety metrics!`,
+      `For ${city}, the current condition is ${cond || "stable"} at ${temp || "ambient temperature"}. Ask me for clothing advice or outdoor safety tips anytime!`,
+      `Air comfort in ${city} is currently rated as "${currentWeather?.recommendation.metrics.outdoorComfort || "Fair"}". Feel free to ask more specific questions!`,
     ];
     return responses[Math.floor(Math.random() * responses.length)];
   };
@@ -114,7 +158,6 @@ export function FloatingAssistant() {
   const handleSendMessage = async (text: string) => {
     if (!text.trim()) return;
 
-    // Add user message
     const userMsg: Message = {
       id: String(Date.now()),
       sender: "user",
@@ -127,13 +170,11 @@ export function FloatingAssistant() {
     setIsTyping(true);
 
     try {
-      // Helper to safely extract metric values from currentWeather.metrics array
       const findMetric = (keyword: string) =>
         currentWeather?.metrics?.find((m) =>
           m.name.toLowerCase().includes(keyword.toLowerCase())
         )?.value;
 
-      // Construct weather context payload from store state
       const weatherContext = currentWeather
         ? {
             city: currentWeather.hero.city,
@@ -165,7 +206,6 @@ export function FloatingAssistant() {
       if (res.ok && data.answer) {
         aiResponseText = data.answer;
       } else {
-        // Graceful fallback to client heuristics if API error or missing GEMINI_API_KEY
         aiResponseText = generateAIResponse(text);
       }
 
@@ -177,7 +217,6 @@ export function FloatingAssistant() {
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch {
-      // Fallback on network failure
       const fallbackText = generateAIResponse(text);
       const aiMsg: Message = {
         id: String(Date.now() + 1),
@@ -189,6 +228,78 @@ export function FloatingAssistant() {
     } finally {
       setIsTyping(false);
     }
+  };
+
+  // Handle Speech-to-Text Input & Voice City Search
+  const handleVoiceInput = (transcript: string) => {
+    const trimmed = transcript.trim();
+    if (!trimmed) return;
+
+    // Check for Voice Weather Search Commands (e.g. "weather in Tokyo", "search for London", "show Paris")
+    const searchPattern = /^(?:weather (?:in|for)|search (?:for|city)|show (?:weather for|weather in|me))\s+(.+)/i;
+    const match = trimmed.match(searchPattern);
+
+    if (match && match[1]) {
+      const cityName = match[1].replace(/[?.!]/g, "").trim();
+      if (cityName) {
+        fetchWeather(cityName);
+        const confirmMsg: Message = {
+          id: String(Date.now()),
+          sender: "user",
+          text: `Voice Command: Weather for ${cityName}`,
+          timestamp: new Date(),
+        };
+        const assistantMsg: Message = {
+          id: String(Date.now() + 1),
+          sender: "assistant",
+          text: `Searching live weather forecast for ${cityName}...`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, confirmMsg, assistantMsg]);
+        return;
+      }
+    }
+
+    // Standard AI question via Voice
+    handleSendMessage(trimmed);
+  };
+
+  const toggleMicListening = () => {
+    if (!speechSupported || !recognitionRef.current) return;
+
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch {
+        setIsListening(false);
+      }
+    }
+  };
+
+  // Text-to-Speech synthesis
+  const speakMessage = (msgId: string, text: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+
+    if (speakingMessageId === msgId) {
+      window.speechSynthesis.cancel();
+      setSpeakingMessageId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onend = () => setSpeakingMessageId(null);
+    utterance.onerror = () => setSpeakingMessageId(null);
+
+    setSpeakingMessageId(msgId);
+    window.speechSynthesis.speak(utterance);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -226,7 +337,7 @@ export function FloatingAssistant() {
                   </Text>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
-                    <span className="text-[10px] font-semibold text-muted-foreground">Online</span>
+                    <span className="text-[10px] font-semibold text-muted-foreground">Voice AI Ready</span>
                   </div>
                 </div>
               </div>
@@ -243,29 +354,54 @@ export function FloatingAssistant() {
             <div className="flex-1 overflow-y-auto p-4 space-y-3.5 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
               {messages.map((msg) => {
                 const isUser = msg.sender === "user";
+                const isSpeaking = speakingMessageId === msg.id;
+
                 return (
                   <div
                     key={msg.id}
-                    className={`flex items-start gap-2.5 max-w-[85%] ${isUser ? "ml-auto flex-row-reverse" : "mr-auto"
-                      }`}
+                    className={`flex items-start gap-2.5 max-w-[85%] ${
+                      isUser ? "ml-auto flex-row-reverse" : "mr-auto"
+                    }`}
                   >
                     <div
-                      className={`h-7 w-7 rounded-full flex-shrink-0 flex items-center justify-center text-xs select-none ${isUser
+                      className={`h-7 w-7 rounded-full flex-shrink-0 flex items-center justify-center text-xs select-none ${
+                        isUser
                           ? "bg-primary text-primary-foreground font-bold"
                           : "bg-muted text-muted-foreground"
-                        }`}
+                      }`}
                     >
                       {isUser ? <User className="h-3.5 w-3.5" /> : <BrainCircuit className="h-3.5 w-3.5" />}
                     </div>
 
                     <div className="space-y-1">
                       <div
-                        className={`p-3 rounded-2xl text-xs leading-relaxed ${isUser
+                        className={`p-3 rounded-2xl text-xs leading-relaxed relative group ${
+                          isUser
                             ? "bg-primary text-primary-foreground rounded-tr-none"
                             : "bg-muted/60 text-foreground border border-border/30 rounded-tl-none"
-                          }`}
+                        }`}
                       >
                         {msg.text}
+
+                        {/* Text-to-Speech audio button on AI messages */}
+                        {!isUser && (
+                          <button
+                            onClick={() => speakMessage(msg.id, msg.text)}
+                            className={`ml-2 p-1 rounded-full transition-all cursor-pointer inline-flex items-center align-middle ${
+                              isSpeaking
+                                ? "text-primary bg-primary/20 animate-pulse"
+                                : "text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
+                            }`}
+                            title={isSpeaking ? "Stop speaking" : "Listen to audio response"}
+                            aria-label={isSpeaking ? "Stop speaking" : "Listen to audio response"}
+                          >
+                            {isSpeaking ? (
+                              <VolumeX className="h-3.5 w-3.5 text-primary" />
+                            ) : (
+                              <Volume2 className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        )}
                       </div>
                       <span className="text-[9px] text-muted-foreground/60 block px-1">
                         {msg.timestamp.toLocaleTimeString([], {
@@ -307,19 +443,41 @@ export function FloatingAssistant() {
               ))}
             </div>
 
-            {/* Input Bar */}
+            {/* Input Bar with Voice Controls */}
             <form
               onSubmit={handleSubmit}
               className="p-3 border-t border-border bg-background flex items-center gap-2"
             >
               <input
                 type="text"
-                placeholder="Ask about weather, clothing, activities..."
+                placeholder={isListening ? "Listening for speech..." : "Ask weather or speak command..."}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 disabled={isTyping}
-                className="flex-1 h-9 px-3 rounded-lg border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40 transition-all disabled:opacity-50"
+                className={`flex-1 h-9 px-3 rounded-lg border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 transition-all disabled:opacity-50 ${
+                  isListening
+                    ? "border-rose-500/60 ring-1 ring-rose-500/40 bg-rose-500/5 placeholder:text-rose-500/80 font-medium"
+                    : "border-border focus:ring-primary/40 focus:border-primary/40"
+                }`}
               />
+
+              {/* Speech-to-Text Mic Button */}
+              {speechSupported && (
+                <button
+                  type="button"
+                  onClick={toggleMicListening}
+                  className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                    isListening
+                      ? "bg-rose-500 text-white animate-pulse shadow-md shadow-rose-500/30"
+                      : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                  }`}
+                  title={isListening ? "Stop listening" : "Click to speak voice question"}
+                  aria-label={isListening ? "Stop listening" : "Click to speak voice question"}
+                >
+                  {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </button>
+              )}
+
               <button
                 type="submit"
                 disabled={!inputValue.trim() || isTyping}
