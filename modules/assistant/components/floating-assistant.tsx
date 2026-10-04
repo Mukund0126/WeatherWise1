@@ -47,6 +47,14 @@ export function FloatingAssistant() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+  const isListeningRef = useRef(false);
+  const transcriptRef = useRef("");
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Synchronize listening ref for event handlers
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
 
   // Check speech recognition support on mount
   useEffect(() => {
@@ -56,24 +64,54 @@ export function FloatingAssistant() {
       if (SpeechRecognition) {
         setSpeechSupported(true);
         const recognition = new SpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = false;
+        recognition.continuous = true;
+        recognition.interimResults = true;
         recognition.lang = "en-US";
 
         recognition.onresult = (event: any) => {
-          const transcript = event.results[0][0].transcript;
-          setIsListening(false);
-          if (transcript) {
-            handleVoiceInput(transcript);
+          let currentText = "";
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            currentText += event.results[i][0].transcript;
+          }
+
+          if (currentText.trim()) {
+            setInputValue(currentText);
+            transcriptRef.current = currentText;
+
+            // Reset 2.5-second silence buffer before auto-dispatching
+            if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+            silenceTimerRef.current = setTimeout(() => {
+              if (isListeningRef.current) {
+                try {
+                  recognition.stop();
+                } catch {
+                  // Ignore stop error
+                }
+              }
+            }, 2500);
           }
         };
 
-        recognition.onerror = () => {
-          setIsListening(false);
+        recognition.onerror = (err: any) => {
+          if (err.error !== "no-speech") {
+            setIsListening(false);
+            isListeningRef.current = false;
+          }
         };
 
         recognition.onend = () => {
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+          }
+
+          const textToSend = transcriptRef.current.trim();
           setIsListening(false);
+          isListeningRef.current = false;
+
+          if (textToSend) {
+            handleVoiceInput(textToSend);
+            transcriptRef.current = "";
+          }
         };
 
         recognitionRef.current = recognition;
@@ -268,14 +306,24 @@ export function FloatingAssistant() {
     if (!speechSupported || !recognitionRef.current) return;
 
     if (isListening) {
-      recognitionRef.current.stop();
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // Ignore stop error
+      }
       setIsListening(false);
+      isListeningRef.current = false;
     } else {
       try {
+        transcriptRef.current = "";
+        setInputValue("");
         recognitionRef.current.start();
         setIsListening(true);
+        isListeningRef.current = true;
       } catch {
         setIsListening(false);
+        isListeningRef.current = false;
       }
     }
   };
