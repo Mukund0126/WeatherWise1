@@ -24,24 +24,65 @@ export class OpenMeteoProvider implements IWeatherProvider {
 
   async getForecastByCoords(lat: number, lon: number, name?: string, region?: string, country?: string, days = 7): Promise<unknown> {
     try {
-      let location = { name: name || "Unknown Location", region: region || "", country: country || "", lat, lon };
+      let location = { name: name || "", region: region || "", country: country || "", lat, lon };
 
-      // 1. Fetch reverse geocoding from WeatherAPI to preserve location metadata ONLY if name is missing
-      if (!name) {
-        const geocodeUrl = `${this.weatherApiBaseUrl}/search.json?key=${this.weatherApiKey}&q=${lat},${lon}`;
-        const geocodeRes = await fetch(geocodeUrl);
-        if (!geocodeRes.ok) {
-          throw new Error(`Geocoding failed with status ${geocodeRes.status}`);
-        }
-        const geocodeData = await geocodeRes.json();
-        
-        if (Array.isArray(geocodeData) && geocodeData.length > 0) {
-          location = geocodeData[0];
+      // 1. Try reverse geocoding from WeatherAPI if name is not provided
+      if (!location.name && this.weatherApiKey) {
+        try {
+          const geocodeUrl = `${this.weatherApiBaseUrl}/search.json?key=${this.weatherApiKey}&q=${lat},${lon}`;
+          const geocodeRes = await fetch(geocodeUrl);
+          if (geocodeRes.ok) {
+            const geocodeData = await geocodeRes.json();
+            if (Array.isArray(geocodeData) && geocodeData.length > 0) {
+              location = {
+                name: geocodeData[0].name || "",
+                region: geocodeData[0].region || "",
+                country: geocodeData[0].country || "",
+                lat,
+                lon,
+              };
+            }
+          }
+        } catch (e) {
+          logger.warn(`WeatherAPI reverse geocoding failed for ${lat},${lon}`, e);
         }
       }
 
-      // 2. Fetch weather data from Open-Meteo
-      // Requesting current, hourly, and daily variables necessary for the dashboard
+      // 2. Fall back to Open-Meteo free reverse geocoding API if name is still missing
+      if (!location.name) {
+        try {
+          const freeGeoUrl = `https://geocoding-api.open-meteo.com/v1/reverse?latitude=${lat}&longitude=${lon}`;
+          const freeGeoRes = await fetch(freeGeoUrl);
+          if (freeGeoRes.ok) {
+            const freeGeoData = await freeGeoRes.json();
+            if (freeGeoData?.results?.[0]) {
+              const place = freeGeoData.results[0];
+              location = {
+                name: place.name || place.admin1 || "Current Location",
+                region: place.admin1 || "",
+                country: place.country || "",
+                lat,
+                lon,
+              };
+            }
+          }
+        } catch (e) {
+          logger.warn(`Open-Meteo reverse geocoding failed for ${lat},${lon}`, e);
+        }
+      }
+
+      // 3. Final default location fallback
+      if (!location.name) {
+        location = {
+          name: `Coordinates (${lat.toFixed(2)}, ${lon.toFixed(2)})`,
+          region: "Local Region",
+          country: "",
+          lat,
+          lon,
+        };
+      }
+
+      // Fetch weather data from Open-Meteo
       const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
         `&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,surface_pressure,wind_speed_10m` +
         `&hourly=temperature_2m,weather_code` +
@@ -51,11 +92,10 @@ export class OpenMeteoProvider implements IWeatherProvider {
 
       const weatherRes = await fetch(openMeteoUrl);
       if (!weatherRes.ok) {
-        throw new Error(`Open-Meteo API failed with status ${weatherRes.status}`);
+        throw new Error(`Open-Meteo API returned status ${weatherRes.status}`);
       }
       const weatherData = await weatherRes.json();
 
-      // Return combined raw data
       return {
         _provider: "open-meteo",
         location,

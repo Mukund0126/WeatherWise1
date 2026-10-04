@@ -112,6 +112,18 @@ export const useWeatherStore = create<WeatherState>()(
           if (errMessage.includes("aborted")) {
             return;
           }
+
+          // If coordinate fetch failed but location name is known, attempt city fetch fallback
+          if (name) {
+            try {
+              logger.warn(`Coordinate fetch failed for ${lat},${lon}, falling back to city fetch for ${name}`);
+              await get().fetchWeather(name, abortSignal);
+              return;
+            } catch {
+              // Ignore fallback error and proceed to set error state below
+            }
+          }
+
           const errType =
             err && typeof err === "object" && "type" in err
               ? String((err as Record<string, unknown>).type)
@@ -119,7 +131,7 @@ export const useWeatherStore = create<WeatherState>()(
 
           logger.error(`fetchWeatherByCoordinates failed for ${lat}, ${lon}`, err);
           set({
-            error: errMessage || "Failed to load weather data.",
+            error: errMessage || "Failed to load weather data for coordinates.",
             errorType: errType,
             isLoading: false,
           });
